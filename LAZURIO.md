@@ -40,6 +40,10 @@ No PostHog key is baked into this build, so it sends no CLI telemetry unless
   `-lazurio.<n+1>` release; a new upstream version gets a new branch pair with the Lazurio commits
   ported onto it.
 - `next` mirrors upstream and carries no Lazurio commits.
+- The repository's default branch is the current `lazurio/cli-<upstream version>`, because GitHub
+  dispatches a `workflow_dispatch` workflow only when it exists on the default branch, and the
+  upstream maintenance workflows (the scheduled ones and `Build CLI Binaries`) are disabled in
+  this fork.
 
 ## Making a release
 
