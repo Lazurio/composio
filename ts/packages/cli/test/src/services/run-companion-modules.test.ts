@@ -452,7 +452,7 @@ describe('run-companion-modules', () => {
           expect(fetchMock).toHaveBeenCalledOnce();
           const requestUrl = String(fetchMock.mock.calls[0]?.[0]);
           expect(requestUrl).toBe(
-            'https://prefixed-proxy.test/repos/ComposioHQ/composio/releases/tags/%40composio%2Fcli%408.8.8-test'
+            'https://prefixed-proxy.test/repos/Lazurio/composio/releases/tags/%40composio%2Fcli%408.8.8-test'
           );
         }).pipe(
           Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromEnv()),

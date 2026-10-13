@@ -38,8 +38,8 @@ composio [--log-level All|Trace|Debug|Info|Warn|Error|Fatal|None]
 - `composio proxy <url> --toolkit <toolkit> [-X method] [-H header]... [-d data]`: Call a toolkit API directly through Composio using a connected account.
 - `composio tools list|info`: Inspect available tools and their cached schemas.
 - `composio triggers list <toolkit>|info`: Inspect toolkit-scoped trigger types and their schemas.
-- `composio connections list [--toolkit <toolkit>]`: Print toolkit connection statuses as JSON.
-- `composio connections remove <account>`: Interactively remove a toolkit connection after confirmation.
+- `composio connections list [--toolkit <toolkit>]`: Print toolkit connections as JSON with each account's ID, status, alias, word_id, and provider display name.
+- `composio connections remove <account>`: Remove a toolkit connection after confirmation, or without a prompt with `--yes`.
 - `composio artifacts cwd`: Print the cwd-scoped CLI session artifacts directory.
 - `composio dev <subcommand>`: Developer workflows for init, playground execution, logs, toolkits, auth configs, accounts, triggers, orgs, and projects.
 - `composio generate [-o, --output-dir <directory>] [--toolkits <toolkit>] [--type-tools]`: Auto-detect the project language (Python or TypeScript) and generate type stubs for toolkits, tools, and triggers.
@@ -92,7 +92,7 @@ Additionally, `composio upgrade` supports the following environment variables:
 | Environment Variable         | Description                                                                                            | Default                |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------ | ---------------------- |
 | COMPOSIO_GITHUB_API_BASE_URL | The base URL for the GitHub API                                                                        | https://api.github.com |
-| COMPOSIO_GITHUB_OWNER        | The owner of the Composio repository on GitHub                                                         | ComposioHQ             |
+| COMPOSIO_GITHUB_OWNER        | The owner of the GitHub repository releases are fetched from (the Lazurio build's own fork)            | Lazurio                |
 | COMPOSIO_GITHUB_REPO         | The repository name for the Composio CLI                                                               | composio               |
 | COMPOSIO_GITHUB_TAG          | The tag to use when fetching the Composio CLI binary from Github                                       | latest                 |
 | COMPOSIO_GITHUB_ACCESS_TOKEN | The access token for the GitHub API. Useful during development to avoid getting rate-limited by Github | None                   |

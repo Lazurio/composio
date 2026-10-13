@@ -60,7 +60,8 @@ print_usage() {
         '' \
         'Set COMPOSIO_INSTALL_SHELL=auto|zsh|bash|fish|none to control automatic shell setup' \
         "(default auto: detect the login shell from \$SHELL; none: install only)." \
-        'Version tags may be stable or beta, for example 0.3.1 or @composio/cli@0.3.1-beta.329.'
+        'Version tags may be stable or beta, for example 0.3.1 or @composio/cli@0.3.1-beta.329,' \
+        'or a Lazurio build, for example @composio/cli@0.4.3-lazurio.1.'
 }
 
 validate_identifier() {
@@ -145,9 +146,10 @@ normalize_version() {
         *) normalize_version_bare=$normalize_version_value ;;
     esac
 
+    # Lazurio build: -lazurio.N releases of the Lazurio/composio fork install by explicit version.
     printf '%s\n' "$normalize_version_bare" |
-        grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?$' ||
-        error "Invalid Composio CLI version \"$normalize_version_value\". Expected X.Y.Z or X.Y.Z-beta.N."
+        grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-(beta|lazurio)\.[0-9]+)?$' ||
+        error "Invalid Composio CLI version \"$normalize_version_value\". Expected X.Y.Z, X.Y.Z-beta.N, or X.Y.Z-lazurio.N."
 
     printf '@composio/cli@%s\n' "$normalize_version_bare"
 }

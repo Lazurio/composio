@@ -6,16 +6,17 @@ import * as constants from 'src/constants';
 
 const provider = (env: Record<string, string>) => ConfigProvider.fromEnvRecord(env);
 
+// The Lazurio build fetches its releases from the Lazurio/composio fork (LAZURIO.md).
 const DEFAULTS = {
-  apiBaseUrl: constants.GITHUB_REPO.API_BASE_URL,
-  owner: constants.GITHUB_REPO.OWNER,
-  repo: constants.GITHUB_REPO.REPO,
+  apiBaseUrl: 'https://api.github.com',
+  owner: 'Lazurio',
+  repo: 'composio',
   tag: undefined,
   accessToken: undefined,
 };
 
 describe('GITHUB_CONFIG', () => {
-  it.effect('[Given] no overrides [Then] both configs point at the Composio repository', () =>
+  it.effect('[Given] no overrides [Then] both configs point at the Lazurio fork', () =>
     Effect.gen(function* () {
       deepStrictEqual(yield* GITHUB_CONFIG.parse(provider({})), DEFAULTS);
       deepStrictEqual(yield* GITHUB_REPAIR_CONFIG.parse(provider({})), DEFAULTS);

@@ -104,10 +104,16 @@ export const COMPOSIO_POSTHOG_PROJECT_API_KEY =
     : '';
 
 /**
- * GitHub repository information for release fetching
+ * GitHub repository information for release fetching.
+ *
+ * Lazurio build: the update check, `composio upgrade`, skill installation, and
+ * companion-module self-repair read releases from the `Lazurio/composio` fork,
+ * which publishes `@composio/cli@<version>-lazurio.<n>` (see LAZURIO.md at the
+ * repository root). The `COMPOSIO_GITHUB_*` overrides, and `GITHUB_*` for
+ * self-repair, still take precedence.
  */
 export const GITHUB_REPO = {
-  OWNER: 'ComposioHQ',
+  OWNER: 'Lazurio',
   REPO: 'composio',
   API_BASE_URL: 'https://api.github.com',
 } as const;

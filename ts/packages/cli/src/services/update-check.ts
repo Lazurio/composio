@@ -23,12 +23,19 @@ import { TerminalUI } from './terminal-ui';
  *   Uses GitHub's releases API and only considers stable @composio/cli releases
  *   that include the binary asset for the current platform. The result is cached
  *   to ~/.composio/update-check.json and refreshed at most once every 24 hours.
+ *
+ *   Lazurio build: an `X.Y.Z-lazurio.N` release of the Lazurio/composio fork is
+ *   stable too (see LAZURIO.md at the repository root). Semver orders
+ *   `0.4.3-lazurio.1 < 0.4.3-lazurio.2 < 0.4.4-lazurio.1`.
  */
 
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
-/** Matches `@composio/cli@<semver>` — excludes prereleases. */
-const CLI_RELEASE_TAG_RE = /^@composio\/cli@(\d+\.\d+\.\d+)$/;
+/** A stable CLI version: `X.Y.Z` or a Lazurio build `X.Y.Z-lazurio.N`; betas are not stable. */
+const STABLE_CLI_VERSION_RE = /^\d+\.\d+\.\d+(?:-lazurio\.\d+)?$/;
+
+/** Matches `@composio/cli@<stable version>` — excludes betas and other prereleases. */
+const CLI_RELEASE_TAG_RE = /^@composio\/cli@(\d+\.\d+\.\d+(?:-lazurio\.\d+)?)$/;
 
 export interface UpdateCheckState {
   lastChecked: string; // ISO-8601
@@ -39,7 +46,10 @@ export interface UpdateCheckState {
 export interface UpdateStatus {
   /** Version reported by the running CLI executable. */
   current: string;
-  /** Latest known stable release with a binary for this platform, if known. */
+  /**
+   * Latest known stable release with a binary for this platform, if known: `X.Y.Z` or a
+   * Lazurio build `X.Y.Z-lazurio.N`.
+   */
   latestStable: string | null;
   /** True when a strictly newer stable release than `current` is available. */
   updateAvailable: boolean;
@@ -292,7 +302,7 @@ export function createUpdateChecker(config: UpdateCheckConfig) {
       const validLatest = cachedLatest ? semver.valid(cachedLatest) : null;
       const validCurrent = semver.valid(config.currentVersion);
       const latestStable =
-        validLatest && semver.prerelease(validLatest) === null ? validLatest : null;
+        validLatest && STABLE_CLI_VERSION_RE.test(validLatest) ? validLatest : null;
       const updateAvailable =
         validCurrent !== null && latestStable !== null && semver.gt(latestStable, validCurrent);
       const checkStatus = updateAvailable
