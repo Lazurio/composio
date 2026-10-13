@@ -92,7 +92,7 @@ Additionally, `composio upgrade` supports the following environment variables:
 | Environment Variable         | Description                                                                                            | Default                |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------ | ---------------------- |
 | COMPOSIO_GITHUB_API_BASE_URL | The base URL for the GitHub API                                                                        | https://api.github.com |
-| COMPOSIO_GITHUB_OWNER        | The owner of the Composio repository on GitHub                                                         | ComposioHQ             |
+| COMPOSIO_GITHUB_OWNER        | The owner of the GitHub repository releases are fetched from (the Lazurio build's own fork)            | Lazurio                |
 | COMPOSIO_GITHUB_REPO         | The repository name for the Composio CLI                                                               | composio               |
 | COMPOSIO_GITHUB_TAG          | The tag to use when fetching the Composio CLI binary from Github                                       | latest                 |
 | COMPOSIO_GITHUB_ACCESS_TOKEN | The access token for the GitHub API. Useful during development to avoid getting rate-limited by Github | None                   |

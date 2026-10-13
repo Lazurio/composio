@@ -615,6 +615,14 @@ EOF
   run_installer "$case_root/env-version-home" "$env_version_install" "$case_root/env-version-bin" >/dev/null 2>&1
   [[ $(<"$env_version_install/release-tag.txt") == '@composio/cli@95.0.0-beta.7' ]] || fail "$interpreter_name env beta normalization"
 
+  # Lazurio build: a -lazurio.N release installs by explicit version.
+  reset_case
+  CASE_INSTALL_VERSION=@composio/cli@94.0.0-lazurio.3
+  lazurio_version_install="$case_root/lazurio-version-install"
+  run_installer "$case_root/lazurio-version-home" "$lazurio_version_install" "$case_root/lazurio-version-bin" >/dev/null 2>&1 ||
+    fail "$interpreter_name Lazurio build version must install"
+  [[ $(<"$lazurio_version_install/release-tag.txt") == '@composio/cli@94.0.0-lazurio.3' ]] || fail "$interpreter_name env Lazurio build version"
+
   reset_case
   if malformed_output=$(run_installer "$case_root/malformed-home" "$case_root/malformed-install" "$case_root/malformed-bin" 1.2.3-rc.1 2>&1); then
     fail "$interpreter_name malformed prerelease must fail"
