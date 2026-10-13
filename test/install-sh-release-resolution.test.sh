@@ -449,6 +449,7 @@ EOF
     unset CASE_ALLOW_HTTP_HOST CASE_CHECKSUM_MODE CASE_API_ASSET_URL CASE_BASE_MODE CASE_REDIRECT_DOWNGRADE
     unset CASE_SHELL_CAPABILITY CASE_INSTALL_EXIT CASE_SETUP_EXIT CASE_VERSION_EXIT CASE_PATH_PREFIX CASE_UNSET_SHELL
     unset CASE_CURL_DELAY_URL CASE_CURL_DELAY_SECONDS CASE_SHELL_VALUE CASE_INSTALL_HINT CASE_INSTALL_RECONCILE
+    unset CASE_INSTALL_SHA256 CASE_PATH
     rm -f "$case_root/curl-parent.pid"
     : >"$curl_log"
     : >"$composio_log"
@@ -494,10 +495,11 @@ EOF
     fi
     common_env "$home" "$install_dir" "$bin_dir"
     env -u COMPOSIO_INSTALL_PLUGINS \
-      PATH="${CASE_PATH_PREFIX:-}$fake_bin:$ambient_path" \
+      PATH="${CASE_PATH:-${CASE_PATH_PREFIX:-}$fake_bin:$ambient_path}" \
       SHELL="${CASE_SHELL_VALUE:-/bin/bash}" \
       "${common_env_args[@]}" \
       COMPOSIO_INSTALL_VERSION="${CASE_INSTALL_VERSION:-}" \
+      COMPOSIO_INSTALL_SHA256="${CASE_INSTALL_SHA256:-}" \
       COMPOSIO_INSTALL_SHELL="${CASE_INSTALL_SHELL:-}" \
       COMPOSIO_QUIET="${CASE_QUIET:-0}" \
       COMPOSIO_DEBUG="${CASE_DEBUG:-0}" \
@@ -695,6 +697,161 @@ EOF
   fi
   assert_contains "$official_entry_output" 'checksums.txt has no entry for' "$interpreter_name official absent entry error"
   [[ ! -e "$case_root/official-entry-install/composio" ]] || fail "$interpreter_name official absent entry must not install"
+
+  # Lazurio build (LAZURIO.md): the Lazurio/composio source is strict, and
+  # COMPOSIO_INSTALL_SHA256 pins the archive whatever the source. The fake
+  # sha256sum reports 64 "a"s for every archive.
+  lazurio_env() {
+    CASE_GITHUB_URL=https://github.com
+    CASE_GITHUB_OWNER=Lazurio
+    CASE_GITHUB_REPO=composio
+    CASE_API_BASE=
+  }
+  right_sha256=$(printf '%064d' 0 | tr 0 a)
+  wrong_sha256=$(printf '%064d' 0 | tr 0 b)
+
+  # Every command on the normal PATH except sha256sum and shasum, fake or real,
+  # models a system without a SHA-256 utility.
+  no_sha_bin="$case_root/no-sha-bin"
+  mkdir -p "$no_sha_bin"
+  IFS=: read -r -a no_sha_dirs <<<"$fake_bin:$ambient_path"
+  for no_sha_dir in "${no_sha_dirs[@]}"; do
+    for no_sha_tool in "$no_sha_dir"/*; do
+      no_sha_name=${no_sha_tool##*/}
+      if [[ $no_sha_name != sha256sum && $no_sha_name != shasum && -f $no_sha_tool && -x $no_sha_tool &&
+        ! -e $no_sha_bin/$no_sha_name && ! -L $no_sha_bin/$no_sha_name ]]; then
+        ln -s "$no_sha_tool" "$no_sha_bin/$no_sha_name"
+      fi
+    done
+  done
+  if env PATH="$no_sha_bin" "$interpreter" -c 'command -v sha256sum || command -v shasum' >/dev/null 2>&1; then
+    fail "$interpreter_name the PATH without SHA-256 utilities still has one"
+  fi
+
+  # Everything an installation consists of: paths, file checksums, and where
+  # its entry point leads.
+  install_snapshot() {
+    (cd "$1" && find . | LC_ALL=C sort && find . -type f -exec cksum {} + | LC_ALL=C sort)
+    readlink "$2/composio" || printf '%s\n' 'entry point is not a symlink'
+  }
+  assert_installs_nothing() {
+    [[ -z $(find "$1" "$2" -mindepth 1 -print -quit) ]] || fail "$3"
+  }
+
+  # Lazurio source without checksums.txt: refused, nothing installed.
+  reset_case
+  lazurio_env
+  CASE_CHECKSUM_MODE=missing
+  if lazurio_missing_output=$(run_installer "$case_root/lazurio-missing-home" "$case_root/lazurio-missing-install" "$case_root/lazurio-missing-bin" "$stable_tag" 2>&1); then
+    fail "$interpreter_name Lazurio source with a missing checksums.txt must fail"
+  fi
+  assert_contains "$lazurio_missing_output" 'Lazurio releases always publish checksums' "$interpreter_name Lazurio missing manifest error"
+  assert_installs_nothing "$case_root/lazurio-missing-install" "$case_root/lazurio-missing-bin" \
+    "$interpreter_name Lazurio missing manifest must install nothing"
+
+  # Lazurio source whose checksums.txt has no entry for the archive: refused.
+  reset_case
+  lazurio_env
+  CASE_CHECKSUM_MODE=absent-entry
+  if lazurio_entry_output=$(run_installer "$case_root/lazurio-entry-home" "$case_root/lazurio-entry-install" "$case_root/lazurio-entry-bin" "$stable_tag" 2>&1); then
+    fail "$interpreter_name Lazurio source with no checksum entry must fail"
+  fi
+  assert_contains "$lazurio_entry_output" 'checksums.txt has no entry for' "$interpreter_name Lazurio absent entry error"
+  assert_installs_nothing "$case_root/lazurio-entry-install" "$case_root/lazurio-entry-bin" \
+    "$interpreter_name Lazurio absent entry must install nothing"
+
+  # Lazurio source with a complete checksums.txt installs.
+  reset_case
+  lazurio_env
+  CASE_CHECKSUM_MODE=valid
+  lazurio_valid_output=$(run_installer "$case_root/lazurio-valid-home" "$case_root/lazurio-valid-install" "$case_root/lazurio-valid-bin" "$stable_tag" 2>&1) ||
+    fail "$interpreter_name Lazurio source with a valid checksum must install"
+  assert_contains "$lazurio_valid_output" 'Checksum verified' "$interpreter_name Lazurio valid checksum"
+  [[ -x "$case_root/lazurio-valid-install/composio" ]] || fail "$interpreter_name Lazurio valid checksum install"
+
+  # Lazurio source on a system without a SHA-256 utility: refused, even with a
+  # complete checksums.txt.
+  reset_case
+  lazurio_env
+  CASE_CHECKSUM_MODE=valid
+  CASE_PATH=$no_sha_bin
+  if lazurio_no_sha_output=$(run_installer "$case_root/lazurio-no-sha-home" "$case_root/lazurio-no-sha-install" "$case_root/lazurio-no-sha-bin" "$stable_tag" 2>&1); then
+    fail "$interpreter_name Lazurio source without a SHA-256 utility must fail"
+  fi
+  assert_contains "$lazurio_no_sha_output" 'No SHA-256 utility' "$interpreter_name Lazurio missing SHA-256 utility error"
+  assert_installs_nothing "$case_root/lazurio-no-sha-install" "$case_root/lazurio-no-sha-bin" \
+    "$interpreter_name Lazurio source without a SHA-256 utility must install nothing"
+
+  # The official source keeps upstream's behavior without a SHA-256 utility:
+  # it warns and installs.
+  reset_case
+  official_env
+  CASE_CHECKSUM_MODE=valid
+  CASE_PATH=$no_sha_bin
+  official_no_sha_output=$(run_installer "$case_root/official-no-sha-home" "$case_root/official-no-sha-install" "$case_root/official-no-sha-bin" "$stable_tag" 2>&1) ||
+    fail "$interpreter_name official source without a SHA-256 utility must still install"
+  assert_contains "$official_no_sha_output" 'Checksum verification skipped' "$interpreter_name official missing SHA-256 utility warning"
+
+  # A right COMPOSIO_INSTALL_SHA256 installs, here from the Lazurio source whose
+  # checksums.txt lists the same digest.
+  reset_case
+  lazurio_env
+  CASE_CHECKSUM_MODE=valid
+  CASE_INSTALL_SHA256=$right_sha256
+  pinned_home="$case_root/pinned-home"
+  pinned_install="$case_root/pinned-install"
+  pinned_bin="$case_root/pinned-bin"
+  pinned_output=$(run_installer "$pinned_home" "$pinned_install" "$pinned_bin" "$stable_tag" 2>&1) ||
+    fail "$interpreter_name right COMPOSIO_INSTALL_SHA256 must install"
+  assert_contains "$pinned_output" 'Archive matches COMPOSIO_INSTALL_SHA256' "$interpreter_name right COMPOSIO_INSTALL_SHA256 check"
+  assert_contains "$pinned_output" 'Checksum verified' "$interpreter_name right COMPOSIO_INSTALL_SHA256 checksum"
+  [[ $(<"$pinned_install/release-tag.txt") == "$stable_tag" ]] || fail "$interpreter_name right COMPOSIO_INSTALL_SHA256 install"
+
+  # A wrong COMPOSIO_INSTALL_SHA256 is refused right after the download, here
+  # from an otherwise lenient source, so the working installation above stays
+  # byte-identical: binary, support files, metadata, and entry point.
+  reset_case
+  CASE_INSTALL_SHA256=$wrong_sha256
+  printf '%s\n' '# existing installation' >>"$pinned_install/composio"
+  pinned_before=$(install_snapshot "$pinned_install" "$pinned_bin")
+  if wrong_pin_output=$(run_installer "$pinned_home" "$pinned_install" "$pinned_bin" "$beta_tag" 2>&1); then
+    fail "$interpreter_name wrong COMPOSIO_INSTALL_SHA256 must fail"
+  fi
+  assert_contains "$wrong_pin_output" 'SHA-256 mismatch' "$interpreter_name wrong COMPOSIO_INSTALL_SHA256 error"
+  [[ $(install_snapshot "$pinned_install" "$pinned_bin") == "$pinned_before" ]] ||
+    fail "$interpreter_name wrong COMPOSIO_INSTALL_SHA256 must leave the existing installation byte-identical"
+  "$pinned_bin/composio" --version >/dev/null || fail "$interpreter_name existing installation must keep working"
+
+  # A malformed COMPOSIO_INSTALL_SHA256 is refused before any download.
+  reset_case
+  CASE_INSTALL_SHA256=not-a-sha256
+  if malformed_pin_output=$(run_installer "$case_root/malformed-pin-home" "$case_root/malformed-pin-install" "$case_root/malformed-pin-bin" "$stable_tag" 2>&1); then
+    fail "$interpreter_name malformed COMPOSIO_INSTALL_SHA256 must fail"
+  fi
+  assert_contains "$malformed_pin_output" 'COMPOSIO_INSTALL_SHA256 must be' "$interpreter_name malformed COMPOSIO_INSTALL_SHA256 error"
+  [[ ! -s "$curl_log" ]] || fail "$interpreter_name malformed COMPOSIO_INSTALL_SHA256 must fail before network"
+
+  # COMPOSIO_INSTALL_SHA256 without a SHA-256 utility cannot be checked: refused.
+  reset_case
+  CASE_INSTALL_SHA256=$right_sha256
+  CASE_PATH=$no_sha_bin
+  if pin_no_sha_output=$(run_installer "$case_root/pin-no-sha-home" "$case_root/pin-no-sha-install" "$case_root/pin-no-sha-bin" "$stable_tag" 2>&1); then
+    fail "$interpreter_name COMPOSIO_INSTALL_SHA256 without a SHA-256 utility must fail"
+  fi
+  assert_contains "$pin_no_sha_output" 'no SHA-256 utility' "$interpreter_name COMPOSIO_INSTALL_SHA256 missing utility error"
+  assert_installs_nothing "$case_root/pin-no-sha-install" "$case_root/pin-no-sha-bin" \
+    "$interpreter_name COMPOSIO_INSTALL_SHA256 without a SHA-256 utility must install nothing"
+
+  # With checksums.txt present, its entry must agree with COMPOSIO_INSTALL_SHA256.
+  reset_case
+  CASE_CHECKSUM_MODE=mismatch
+  CASE_INSTALL_SHA256=$right_sha256
+  if pin_manifest_output=$(run_installer "$case_root/pin-manifest-home" "$case_root/pin-manifest-install" "$case_root/pin-manifest-bin" "$stable_tag" 2>&1); then
+    fail "$interpreter_name checksums.txt disagreeing with COMPOSIO_INSTALL_SHA256 must fail"
+  fi
+  assert_contains "$pin_manifest_output" 'but COMPOSIO_INSTALL_SHA256 is' "$interpreter_name checksums.txt disagreement error"
+  assert_installs_nothing "$case_root/pin-manifest-install" "$case_root/pin-manifest-bin" \
+    "$interpreter_name checksums.txt disagreeing with COMPOSIO_INSTALL_SHA256 must install nothing"
 
   reset_case
   CASE_UNSET_PLUGINS=1

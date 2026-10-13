@@ -67,6 +67,15 @@ curl -fsSL https://raw.githubusercontent.com/Lazurio/composio/refs/heads/lazurio
   COMPOSIO_INSTALL_VERSION=@composio/cli@0.4.3-lazurio.1 sh
 ```
 
+For this exact source (github.com, owner `Lazurio`, repo `composio`, no custom API base),
+`install.sh` is strict. A missing `checksums.txt`, a missing or malformed entry for the archive,
+or no SHA-256 utility (`sha256sum` or `shasum`) stops it before anything is extracted or
+replaced. The official ComposioHQ source behaves as upstream, and other overridden sources stay
+lenient. `COMPOSIO_INSTALL_SHA256`, set to the SHA-256 of this platform's archive from the
+release's `checksums.txt`, pins the archive for any source. With it set, a malformed value, a
+missing SHA-256 utility or any other digest stops the install right after the download, and a
+`checksums.txt`, when present, must list the same digest.
+
 ## Retirement
 
 When upstream ships equivalents of both changes in a stable release, Lazurio returns to the

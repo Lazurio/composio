@@ -61,7 +61,10 @@ print_usage() {
         'Set COMPOSIO_INSTALL_SHELL=auto|zsh|bash|fish|none to control automatic shell setup' \
         "(default auto: detect the login shell from \$SHELL; none: install only)." \
         'Version tags may be stable or beta, for example 0.3.1 or @composio/cli@0.3.1-beta.329,' \
-        'or a Lazurio build, for example @composio/cli@0.4.3-lazurio.1.'
+        'or a Lazurio build, for example @composio/cli@0.4.3-lazurio.1.' \
+        '' \
+        'Set COMPOSIO_INSTALL_SHA256 to the expected SHA-256 (64 hex characters) of the release' \
+        'archive for this platform to refuse any other archive.'
 }
 
 validate_identifier() {
@@ -218,6 +221,37 @@ detect_target() {
     fi
 }
 
+is_sha256_hex() {
+    [ "${#1}" -eq 64 ] || return 1
+    case $1 in
+        *[!0123456789abcdefABCDEF]*) return 1 ;;
+    esac
+}
+
+# Prints the SHA-256 of a file; returns 1 when no SHA-256 utility is available.
+sha256_of_file() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | awk '{ print $1 }'
+    elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$1" | awk '{ print $1 }'
+    else
+        return 1
+    fi
+}
+
+# Lazurio build: COMPOSIO_INSTALL_SHA256 pins the downloaded archive whatever
+# the source, checked right after the download and before anything is extracted.
+verify_pinned_sha256() {
+    pinned_archive=$1
+    pinned_name=$2
+    if ! pinned_actual=$(sha256_of_file "$pinned_archive"); then
+        error "COMPOSIO_INSTALL_SHA256 is set, but no SHA-256 utility (sha256sum or shasum) is available to verify $pinned_name. Refusing to install."
+    fi
+    [ "$pinned_actual" = "$install_sha256" ] ||
+        error "SHA-256 mismatch for $pinned_name (COMPOSIO_INSTALL_SHA256 is $install_sha256, got $pinned_actual). Refusing to install."
+    info 'Archive matches COMPOSIO_INSTALL_SHA256'
+}
+
 verify_checksum() {
     checksum_archive=$1
     checksum_manifest=$2
@@ -228,17 +262,23 @@ verify_checksum() {
         if [ "$official_release_source" = 1 ]; then
             error "checksums.txt has no entry for $checksum_name. Official releases always publish complete checksums, so this release cannot be verified. Refusing to install."
         fi
+        if [ "$lazurio_release_source" = 1 ]; then
+            error "checksums.txt has no entry for $checksum_name. Lazurio releases always publish complete checksums, so this release cannot be verified. Refusing to install."
+        fi
         warn "No checksum entry found for $checksum_name; continuing without verification"
         return 0
     fi
     printf '%s\n' "$checksum_expected" | grep -Eq '^[0-9a-fA-F]{64}$' ||
         error "Malformed checksum for $checksum_name"
+    if [ -n "$install_sha256" ] &&
+        [ "$(printf '%s\n' "$checksum_expected" | tr 'ABCDEF' 'abcdef')" != "$install_sha256" ]; then
+        error "checksums.txt lists $checksum_expected for $checksum_name, but COMPOSIO_INSTALL_SHA256 is $install_sha256. Refusing to install."
+    fi
 
-    if command -v sha256sum >/dev/null 2>&1; then
-        checksum_actual=$(sha256sum "$checksum_archive" | awk '{ print $1 }')
-    elif command -v shasum >/dev/null 2>&1; then
-        checksum_actual=$(shasum -a 256 "$checksum_archive" | awk '{ print $1 }')
-    else
+    if ! checksum_actual=$(sha256_of_file "$checksum_archive"); then
+        if [ "$lazurio_release_source" = 1 ]; then
+            error "No SHA-256 utility (sha256sum or shasum) is available to verify $checksum_name. Lazurio releases are always verified, so refusing to install."
+        fi
         warn 'Checksum verification skipped: no SHA-256 utility (sha256sum or shasum) is available on this system'
         return 0
     fi
@@ -806,6 +846,13 @@ main() {
         *) error "COMPOSIO_INSTALL_SHELL must be auto, zsh, bash, fish, or none (got \"$requested_shell\")" ;;
     esac
 
+    install_sha256=${COMPOSIO_INSTALL_SHA256:-}
+    if [ -n "$install_sha256" ]; then
+        is_sha256_hex "$install_sha256" ||
+            error "COMPOSIO_INSTALL_SHA256 must be the 64-character hex SHA-256 of the release archive (got \"$install_sha256\")"
+        install_sha256=$(printf '%s\n' "$install_sha256" | tr 'ABCDEF' 'abcdef')
+    fi
+
     while [ "$#" -gt 0 ]; do
         case $1 in
             --agent) install_agent=1 ;;
@@ -881,6 +928,18 @@ main() {
         official_release_source=1
     fi
 
+    # Lazurio build: the Lazurio/composio fork's releases always publish a
+    # complete checksums.txt too, so that exact source is strict: a missing
+    # manifest, a missing or malformed entry, or no SHA-256 utility is a hard
+    # error before anything is extracted (LAZURIO.md).
+    lazurio_release_source=0
+    if [ "$COMPOSIO_GITHUB_URL" = https://github.com ] &&
+        [ "$COMPOSIO_GITHUB_OWNER" = Lazurio ] &&
+        [ "$COMPOSIO_GITHUB_REPO" = composio ] &&
+        [ -z "$COMPOSIO_GITHUB_API_BASE_URL" ]; then
+        lazurio_release_source=1
+    fi
+
     requested_version=$version_arg
     if [ -z "$requested_version" ]; then
         requested_version=${COMPOSIO_INSTALL_VERSION:-}
@@ -917,10 +976,16 @@ main() {
     curl_download "$archive_url" "$tmpdir/$archive_name" 0 ||
         error "Failed to download from \"$archive_url\""
 
+    if [ -n "$install_sha256" ]; then
+        verify_pinned_sha256 "$tmpdir/$archive_name" "$archive_name"
+    fi
+
     if curl_download "$checksums_url" "$tmpdir/checksums.txt" 1; then
         verify_checksum "$tmpdir/$archive_name" "$tmpdir/checksums.txt" "$archive_name"
     elif [ "$official_release_source" = 1 ]; then
         error "Failed to download checksums.txt from \"$checksums_url\". Official releases always publish checksums, so this release cannot be verified. Refusing to install."
+    elif [ "$lazurio_release_source" = 1 ]; then
+        error "Failed to download checksums.txt from \"$checksums_url\". Lazurio releases always publish checksums, so this release cannot be verified. Refusing to install."
     else
         warn 'No checksums.txt in this release; continuing without verification'
     fi
