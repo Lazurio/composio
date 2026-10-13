@@ -20,8 +20,11 @@ output in its Launchpad. Everything else is upstream code, unchanged.
 3. **Release source.** The update check, `composio upgrade`, skill installation, and
    companion-module self-repair fetch releases from `Lazurio/composio` instead of
    `ComposioHQ/composio` (`GITHUB_REPO` in `ts/packages/cli/src/constants.ts`). The
-   `COMPOSIO_GITHUB_*` overrides, and `GITHUB_*` for self-repair, work as upstream. `install.sh`
-   keeps its upstream default source and also accepts `X.Y.Z-lazurio.N` versions.
+   `COMPOSIO_GITHUB_*` overrides, and `GITHUB_*` for self-repair, work as upstream. The update
+   check counts `X.Y.Z-lazurio.N` releases as stable, next to plain `X.Y.Z` (betas stay
+   excluded), so it announces a newer Lazurio build, and its next daily refresh replaces a version
+   cached by the official CLI. `install.sh` keeps its upstream default source and also accepts
+   `X.Y.Z-lazurio.N` versions.
 
 No PostHog key is baked into this build, so it sends no CLI telemetry unless
 `COMPOSIO_POSTHOG_PROJECT_API_KEY` is set at run time.

@@ -76,6 +76,11 @@ function makeReleasesPayload(versions: string[], assetName = 'composio-darwin-aa
   }));
 }
 
+/** Lazurio build releases (LAZURIO.md): stable GitHub releases tagged `X.Y.Z-lazurio.N`. */
+function makeLazurioReleasesPayload(versions: string[]) {
+  return makeReleasesPayload(versions).map(release => ({ ...release, prerelease: false }));
+}
+
 function makeDeferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
   let reject!: (reason?: unknown) => void;
@@ -160,6 +165,28 @@ describe('parseLatestVersionFromReleases', () => {
       { tag_name: '@composio/cli@0.7.0', assets: [{ name: binaryAssetName }] },
     ];
     expect(parseLatestVersionFromReleases(releases, binaryAssetName)).toBe('0.7.0');
+  });
+
+  it.each([
+    [['0.4.3-lazurio.1', '0.4.3-lazurio.2'], '0.4.3-lazurio.2'],
+    [['0.4.3-lazurio.2', '0.4.3-lazurio.1'], '0.4.3-lazurio.2'],
+    [['0.4.3-lazurio.9', '0.4.3-lazurio.10'], '0.4.3-lazurio.10'],
+    [['0.4.4-lazurio.1', '0.4.3-lazurio.2', '0.4.3-lazurio.1'], '0.4.4-lazurio.1'],
+    [['0.4.3-lazurio.2', '0.4.4-lazurio.1', '0.4.3-lazurio.1'], '0.4.4-lazurio.1'],
+  ])('counts Lazurio builds %j as stable and returns %s', (versions, expected) => {
+    const releases = makeLazurioReleasesPayload(versions);
+    expect(parseLatestVersionFromReleases(releases, binaryAssetName)).toBe(expected);
+  });
+
+  it('keeps betas and other prereleases excluded next to Lazurio builds', () => {
+    const releases = makeLazurioReleasesPayload([
+      '0.4.3-lazurio.1',
+      '0.4.4-beta.7',
+      '0.4.5-lazurio',
+      '0.4.6-lazurio.1.2',
+      '0.4.7-rc.1',
+    ]);
+    expect(parseLatestVersionFromReleases(releases, binaryAssetName)).toBe('0.4.3-lazurio.1');
   });
 });
 
@@ -407,6 +434,58 @@ describe('getUpdateStatus', () => {
       });
     }).pipe(Effect.provide(PlatformLayers))
   );
+
+  it.effect('reports the highest Lazurio build as latestStable', () =>
+    Effect.gen(function* () {
+      const config = makeConfig({
+        currentVersion: '0.4.3-lazurio.1',
+        fetchFn: vi.fn().mockResolvedValue({
+          ok: true,
+          json: () =>
+            Promise.resolve(
+              makeLazurioReleasesPayload(['0.4.3-lazurio.2', '0.4.4-lazurio.1', '0.4.3-lazurio.1'])
+            ),
+        }) as unknown as typeof fetch,
+      });
+      const { getUpdateStatus } = createUpdateChecker(config);
+
+      const status = yield* getUpdateStatus;
+
+      expect(status).toEqual({
+        current: '0.4.3-lazurio.1',
+        latestStable: '0.4.4-lazurio.1',
+        updateAvailable: true,
+        checkStatus: 'update-available',
+        lastChecked: expect.any(String),
+      });
+    }).pipe(Effect.provide(PlatformLayers))
+  );
+
+  it.effect('reports the current Lazurio build as up to date and shows no notice', () =>
+    Effect.gen(function* () {
+      const output: string[] = [];
+      const config = makeConfig({
+        currentVersion: '0.4.3-lazurio.1',
+        fetchFn: vi.fn().mockResolvedValue({
+          ok: true,
+          json: () => Promise.resolve(makeLazurioReleasesPayload(['0.4.3-lazurio.1'])),
+        }) as unknown as typeof fetch,
+      });
+      const { getUpdateStatus, showUpdateNotice } = createUpdateChecker(config);
+
+      const status = yield* getUpdateStatus;
+      yield* showUpdateNotice(makeTerminal(output));
+
+      expect(status).toEqual({
+        current: '0.4.3-lazurio.1',
+        latestStable: '0.4.3-lazurio.1',
+        updateAvailable: false,
+        checkStatus: 'up-to-date',
+        lastChecked: expect.any(String),
+      });
+      expect(output).toEqual([]);
+    }).pipe(Effect.provide(PlatformLayers))
+  );
 });
 
 // ── checkForUpdate ──────────────────────────────────────────────────────
@@ -460,6 +539,35 @@ describe('checkForUpdate', () => {
       expect(config.fetchFn).toHaveBeenCalledOnce();
       const state: UpdateCheckState = JSON.parse(readFileSync(config.stateFile, 'utf-8'));
       expect(state.latestVersion).toBe('0.3.0');
+    }).pipe(Effect.provide(PlatformLayers))
+  );
+
+  it.effect('replaces a stale official latestVersion with the newest Lazurio build', () =>
+    Effect.gen(function* () {
+      const output: string[] = [];
+      const config = makeConfig({
+        currentVersion: '0.4.3-lazurio.1',
+        fetchFn: vi.fn().mockResolvedValue({
+          ok: true,
+          json: () => Promise.resolve(makeLazurioReleasesPayload(['0.4.3-lazurio.1'])),
+        }) as unknown as typeof fetch,
+      });
+      // Cached by the official CLI before the Lazurio build replaced it.
+      writeState(config, { lastChecked: staleLastChecked, latestVersion: '0.4.3' });
+      const { checkForUpdate, showUpdateNotice } = createUpdateChecker(config);
+
+      // Until the refresh, the official 0.4.3 still reads as newer than 0.4.3-lazurio.1.
+      yield* showUpdateNotice(makeTerminal(output));
+      expect(output).toHaveLength(1);
+
+      yield* checkForUpdate;
+      output.length = 0;
+      yield* showUpdateNotice(makeTerminal(output));
+
+      expect(config.fetchFn).toHaveBeenCalledOnce();
+      const state: UpdateCheckState = JSON.parse(readFileSync(config.stateFile, 'utf-8'));
+      expect(state.latestVersion).toBe('0.4.3-lazurio.1');
+      expect(output).toEqual([]);
     }).pipe(Effect.provide(PlatformLayers))
   );
 
