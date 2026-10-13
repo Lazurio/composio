@@ -853,6 +853,25 @@ EOF
   assert_installs_nothing "$case_root/pin-manifest-install" "$case_root/pin-manifest-bin" \
     "$interpreter_name checksums.txt disagreeing with COMPOSIO_INSTALL_SHA256 must install nothing"
 
+  # A present checksums.txt without the archive's entry cannot agree with
+  # COMPOSIO_INSTALL_SHA256: refused even from a lenient source (Pablo's review).
+  reset_case
+  CASE_CHECKSUM_MODE=absent-entry
+  CASE_INSTALL_SHA256=$right_sha256
+  if pin_absent_output=$(run_installer "$case_root/pin-absent-home" "$case_root/pin-absent-install" "$case_root/pin-absent-bin" "$stable_tag" 2>&1); then
+    fail "$interpreter_name pinned archive with a manifest missing its entry must fail"
+  fi
+  assert_contains "$pin_absent_output" 'cannot agree with COMPOSIO_INSTALL_SHA256' "$interpreter_name pinned absent entry error"
+  assert_installs_nothing "$case_root/pin-absent-install" "$case_root/pin-absent-bin" \
+    "$interpreter_name pinned archive with a manifest missing its entry must install nothing"
+
+  # Unpinned, a lenient source keeps upstream's warning for a missing entry.
+  reset_case
+  CASE_CHECKSUM_MODE=absent-entry
+  unpinned_absent_output=$(run_installer "$case_root/unpinned-absent-home" "$case_root/unpinned-absent-install" "$case_root/unpinned-absent-bin" "$stable_tag" 2>&1) ||
+    fail "$interpreter_name unpinned lenient source with a missing entry must still install"
+  assert_contains "$unpinned_absent_output" 'No checksum entry found' "$interpreter_name unpinned absent entry warning"
+
   reset_case
   CASE_UNSET_PLUGINS=1
   run_installer "$case_root/default-plugins-home" "$case_root/default-plugins-install" "$case_root/default-plugins-bin" "$stable_tag" >/dev/null 2>&1

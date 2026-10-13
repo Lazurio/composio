@@ -265,6 +265,11 @@ verify_checksum() {
         if [ "$lazurio_release_source" = 1 ]; then
             error "checksums.txt has no entry for $checksum_name. Lazurio releases always publish complete checksums, so this release cannot be verified. Refusing to install."
         fi
+        # A present manifest must agree with COMPOSIO_INSTALL_SHA256, so one
+        # that lacks the archive's entry is refused too, whatever the source.
+        if [ -n "$install_sha256" ]; then
+            error "checksums.txt has no entry for $checksum_name, so it cannot agree with COMPOSIO_INSTALL_SHA256. Refusing to install."
+        fi
         warn "No checksum entry found for $checksum_name; continuing without verification"
         return 0
     fi
