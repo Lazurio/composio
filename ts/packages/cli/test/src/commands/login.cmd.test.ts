@@ -1,6 +1,7 @@
 import { describe, expect, layer } from '@effect/vitest';
 import { vi, afterEach } from 'vitest';
-import { Console, DateTime, Effect, Exit, Option } from 'effect';
+import { Clock, Console, DateTime, Effect, Exit, Fiber, Latch, Option } from 'effect';
+import { TestClock } from 'effect/testing';
 import path from 'node:path';
 import * as FileSystem from 'effect/FileSystem';
 import { cli, MockConsole, TestLive } from 'test/__utils__';
@@ -576,5 +577,154 @@ describe('CLI: composio login', () => {
           ]);
         })
     );
+  });
+
+  describe('waiting for the browser login', () => {
+    const POLL_INTERVAL_MS = 5_000;
+
+    /**
+     * A session that turns `linked` on its `linkedOnCheck`-th check. It records the TestClock
+     * time of every check and opens `firstCheck` on the first one, so the test advances the
+     * clock only once the command, after its real file I/O, is actually waiting.
+     */
+    const makeLinkingSession = (linkedOnCheck: number) =>
+      Effect.gen(function* () {
+        const now = yield* DateTime.now;
+        const expiresAt = DateTime.add(now, { minutes: 10 });
+        const sessionId = 'linking-session-id';
+        const checkTimes: number[] = [];
+        const firstCheck = Latch.makeUnsafe(false);
+        const repository = ComposioSessionRepository.of({
+          createSession: () =>
+            Effect.succeed({ id: sessionId, code: '001122', expiresAt, status: 'pending' }),
+          getSession: () =>
+            Effect.gen(function* () {
+              checkTimes.push(yield* Clock.currentTimeMillis);
+              yield* firstCheck.open;
+              return checkTimes.length < linkedOnCheck
+                ? {
+                    id: sessionId,
+                    code: '001122',
+                    expiresAt,
+                    status: 'pending' as const,
+                    api_key: null,
+                  }
+                : {
+                    id: sessionId,
+                    code: '001122',
+                    expiresAt,
+                    status: 'linked' as const,
+                    api_key: 'uak_linking_key',
+                    account: { id: 'account_id', name: 'Poll User', email: 'poll@example.com' },
+                  };
+            }),
+          getRealtimeCredentials: () =>
+            Effect.succeed({
+              project_id: 'proj_test',
+              pusher_key: 'pusher_test_key',
+              pusher_cluster: 'mt1',
+            }),
+          authRealtimeChannel: () => Effect.succeed({ auth: 'mock:auth', channel_data: undefined }),
+        });
+        return { sessionId, expiresAt, checkTimes, firstCheck, repository };
+      });
+
+    /**
+     * Runs the command, then moves the clock one interval per check that still finds the
+     * session pending, and expects one check per interval: the login is complete after
+     * `linkedOnCheck - 1` intervals, not after an exponentially growing wait.
+     */
+    const expectChecksEveryInterval = (
+      args: ReadonlyArray<string>,
+      session: Effect.Success<ReturnType<typeof makeLinkingSession>>,
+      linkedOnCheck: number
+    ) =>
+      Effect.gen(function* () {
+        const fiber = yield* cli(args).pipe(
+          Effect.provideService(ComposioSessionRepository, session.repository),
+          Effect.forkChild
+        );
+        yield* session.firstCheck.await;
+        yield* Effect.yieldNow;
+        for (let check = 1; check < linkedOnCheck; check++) {
+          yield* TestClock.adjust(`${POLL_INTERVAL_MS} millis`);
+        }
+
+        const [firstCheckAt = 0] = session.checkTimes;
+        expect(session.checkTimes.map(time => time - firstCheckAt)).toEqual(
+          Array.from({ length: linkedOnCheck }, (_, check) => check * POLL_INTERVAL_MS)
+        );
+        yield* Fiber.join(fiber);
+
+        const ctx = yield* ComposioUserContext;
+        expect(Option.getOrUndefined(ctx.data.apiKey)).toBe('uak_linking_key');
+      });
+
+    const linkingAccountData = {
+      organizations: [{ id: 'org_poll', name: 'Poll Org' }],
+      sessionInfo: makeSessionInfo({
+        orgId: 'org_poll',
+        orgName: 'Poll Org',
+        orgMemberId: 'member_poll',
+        userId: 'user_123',
+        email: 'poll@example.com',
+      }),
+    };
+
+    layer(TestLive({ accountData: linkingAccountData }))(it => {
+      it.effect(
+        '[Given] the session links on the 12th check [When] running --poll [Then] it checks every 5 seconds and completes after 55 seconds',
+        () =>
+          Effect.gen(function* () {
+            const linkedOnCheck = 12;
+            const session = yield* makeLinkingSession(linkedOnCheck);
+            const fs = yield* FileSystem.FileSystem;
+            const cacheDir = yield* setupCacheDir;
+            yield* fs.writeFileString(
+              path.join(cacheDir, 'pending-login-session.json'),
+              `${JSON.stringify(
+                {
+                  key: session.sessionId,
+                  loginUrl: `https://dashboard.composio.dev/?cliKey=${session.sessionId}`,
+                  expiresAt: DateTime.formatIso(session.expiresAt),
+                  cachedAt: new Date().toISOString(),
+                },
+                null,
+                2
+              )}\n`
+            );
+
+            yield* expectChecksEveryInterval(
+              ['login', '--poll', '--no-skill-install'],
+              session,
+              linkedOnCheck
+            );
+          })
+      );
+    });
+
+    layer(
+      TestLive({
+        accountData: linkingAccountData,
+        terminalUI: terminalUIWithTtyState({ stdin: true, stdout: false, stderr: true }),
+      })
+    )(it => {
+      it.effect(
+        '[Given] the person links the session after 95 seconds [When] waiting in an interactive login [Then] it checks every 5 seconds until then',
+        () =>
+          Effect.gen(function* () {
+            // More checks than the 15 retries this wait used to allow, which at a fixed
+            // 5 seconds would give up after 75 seconds.
+            const linkedOnCheck = 20;
+            const session = yield* makeLinkingSession(linkedOnCheck);
+
+            yield* expectChecksEveryInterval(
+              ['login', '--no-browser', '--yes', '--no-skill-install'],
+              session,
+              linkedOnCheck
+            );
+          })
+      );
+    });
   });
 });
