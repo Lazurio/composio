@@ -4,6 +4,14 @@
 
 ### Patch Changes
 
+- `composio login --poll`, and the browser wait of `composio login` and
+  `composio init`, check every 5 seconds whether the login is complete, for up
+  to 10 minutes. From the sixth check on, the pause between checks used to
+  double each time, so a login finished in the browser could go unnoticed for
+  minutes, and `--poll` could wait far beyond the 10 minutes it promises.
+  `composio login --key <key>` also checks every 5 seconds, 15 more times by
+  default (about 75 seconds).
+
 - `composio connections remove <account>` accepts `--yes` (`-y`) to remove the
   connection without asking for confirmation, so scripts and other tools can
   remove a connection. Without it the command asks as before, and a terminal

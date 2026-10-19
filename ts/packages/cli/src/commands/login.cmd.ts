@@ -83,9 +83,19 @@ const agentOpt = Flag.Boolean('agent').pipe(
 
 const PENDING_LOGIN_FILE_NAME = 'pending-login-session.json';
 const PENDING_LOGIN_TTL_MS = 10 * 60 * 1000;
+/** Seconds between two checks of a login session that is not linked yet. */
 const LOGIN_POLL_INTERVAL_SECONDS = 5;
 const LOGIN_POLL_TIMEOUT_SECONDS = 10 * 60;
+/** Checks after the first that keep a login waiting up to 10 minutes, the pending login's TTL. */
 const LOGIN_POLL_RETRIES = Math.ceil(LOGIN_POLL_TIMEOUT_SECONDS / LOGIN_POLL_INTERVAL_SECONDS);
+/** Checks after the first that `composio login --key` makes by default, about 75 seconds. */
+const DEFAULT_LOGIN_POLL_RETRIES = 15;
+/**
+ * A fixed pause between two checks, so `times` retries wait about
+ * `times × LOGIN_POLL_INTERVAL_SECONDS` in total. An exponential ramp combined through
+ * `Schedule.max` would take over from the sixth wait and double every wait after it.
+ */
+const loginPollSchedule = Schedule.spaced(`${LOGIN_POLL_INTERVAL_SECONDS} seconds`);
 
 const PendingLoginSession = Schema.Struct({
   key: Schema.String,
@@ -550,17 +560,7 @@ const loginWithKey = (params: {
               status: currentSession.status,
             });
           }),
-          {
-            // v4 dropped `Schedule.intersect`/`Schedule.recurs`; `Schedule.max` recurs while every
-            // schedule in the list still wants to and waits for the slowest one between attempts
-            // (the v4 equivalent of intersecting delay-producing schedules), and the retry count
-            // cap moves onto `Effect.retry`'s own `times` option.
-            schedule: Schedule.max([
-              Schedule.exponential('0.3 seconds'),
-              Schedule.spaced(`${LOGIN_POLL_INTERVAL_SECONDS} seconds`),
-            ]),
-            times: params.pollRetries ?? 15,
-          }
+          { schedule: loginPollSchedule, times: params.pollRetries ?? DEFAULT_LOGIN_POLL_RETRIES }
         ).pipe(
           Effect.tap(() => spinner.stop('Login successful')),
           Effect.tapError(() => spinner.error('Login timed out. Please try again.'))
@@ -765,13 +765,8 @@ export const browserLogin = (params: {
             status: currentSession.status,
           });
         }),
-        {
-          schedule: Schedule.max([
-            Schedule.exponential('0.3 seconds'),
-            Schedule.spaced('5 seconds'),
-          ]),
-          times: 15,
-        }
+        // The person is signing in right now, so wait as long as `--poll` would.
+        { schedule: loginPollSchedule, times: LOGIN_POLL_RETRIES }
       ).pipe(
         Effect.tap(() => spinner.stop('Login successful')),
         Effect.tapError(() => spinner.error('Login timed out. Please try again.'))
