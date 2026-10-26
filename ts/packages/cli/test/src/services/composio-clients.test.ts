@@ -146,13 +146,23 @@ describe('composio-clients', () => {
       }).pipe(Effect.provide(withSingleton))
     );
 
-    it.effect('listOrganizations returns id and name for each organization', () =>
+    it.effect('listOrganizations returns id, name, and created_at for each organization', () =>
       Effect.gen(function* () {
         vi.spyOn(globalThis, 'fetch').mockResolvedValue(
           jsonResponse({
             organizations: [
-              { id: 'org_a', name: 'A', created_at: 'x', updated_at: 'x' },
-              { id: 'org_b', name: 'B', created_at: 'x', updated_at: 'x' },
+              {
+                id: 'org_a',
+                name: 'A',
+                created_at: '2026-09-14T08:30:00.000Z',
+                updated_at: '2026-10-01T12:00:00.000Z',
+              },
+              {
+                id: 'org_b',
+                name: 'B',
+                created_at: '2025-03-02T17:05:41.123Z',
+                updated_at: '2026-10-02T12:00:00.000Z',
+              },
             ],
             total_pages: 1,
             current_page: 1,
@@ -164,8 +174,8 @@ describe('composio-clients', () => {
 
         expect(result).toEqual({
           data: [
-            { id: 'org_a', name: 'A' },
-            { id: 'org_b', name: 'B' },
+            { id: 'org_a', name: 'A', created_at: '2026-09-14T08:30:00.000Z' },
+            { id: 'org_b', name: 'B', created_at: '2025-03-02T17:05:41.123Z' },
           ],
           total_items: 2,
         });

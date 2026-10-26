@@ -453,8 +453,16 @@ export interface OrganizationSummary {
   readonly name: string;
 }
 
+/**
+ * A single organization entry returned by GET /api/v3.1/org/list.
+ */
+export interface OrganizationListItem extends OrganizationSummary {
+  /** When the organization was created, exactly as the API returns it. */
+  readonly created_at: string;
+}
+
 export interface OrganizationListResponse {
-  readonly data: ReadonlyArray<OrganizationSummary>;
+  readonly data: ReadonlyArray<OrganizationListItem>;
   readonly total_items: number;
 }
 
@@ -684,7 +692,11 @@ export const listOrganizations = (params: {
     );
     const organizations = response.organizations.map(
       (organization: OrgListResponse.Organization) =>
-        ({ id: organization.id, name: organization.name }) satisfies OrganizationSummary
+        ({
+          id: organization.id,
+          name: organization.name,
+          created_at: organization.created_at,
+        }) satisfies OrganizationListItem
     );
 
     return {

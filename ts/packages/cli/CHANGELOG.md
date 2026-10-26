@@ -4,6 +4,13 @@
 
 ### Patch Changes
 
+- `composio orgs list` prints each organization's `created_at` in its JSON
+  output, exactly as Composio's API returns it (an ISO 8601 date-time string),
+  next to `id`, `name`, and `is_selected_global_org`. The API lists
+  organizations newest first and marks none as the account's default, so the
+  creation time is how a script finds the organization Composio created when
+  the account signed up: the oldest one. The human-readable list is unchanged.
+
 - `composio login --poll`, and the browser wait of `composio login` and
   `composio init`, check every 5 seconds whether the login is complete, for up
   to 10 minutes. From the sixth check on, the pause between checks used to
