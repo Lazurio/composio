@@ -1,7 +1,7 @@
 # Lazurio build of the Composio CLI
 
 This is Lazurio's public fork of [ComposioHQ/composio](https://github.com/ComposioHQ/composio). It
-exists to ship a build of the Composio CLI (`ts/packages/cli`) with three changes that no upstream
+exists to ship a build of the Composio CLI (`ts/packages/cli`) with four changes that no upstream
 release contains yet. Lazurio installs this build in the Environments it runs and reads the CLI's
 output in its Launchpad. Everything else is upstream code, unchanged.
 
@@ -25,7 +25,15 @@ output in its Launchpad. Everything else is upstream code, unchanged.
    minutes.
    Upstream `next` still does (`waitForLinkedSession` in
    `ts/packages/cli/src/effects/browser-login.ts`). No upstream issue or pull request yet.
-4. **Release source.** The update check, `composio upgrade`, skill installation, and
+4. **`composio orgs list`** prints each organization's `created_at` in its JSON, exactly as
+   Composio's API returns it (an ISO 8601 date-time string), next to `id`, `name`, and
+   `is_selected_global_org`. The API lists organizations newest first and marks none as the
+   account's default, so the creation time is how Lazurio finds the organization Composio created
+   when the account signed up: the oldest one. Upstream `next` still prints only the other three
+   fields (`formatOrganizationsJson` in
+   `ts/packages/cli/src/commands/orgs/list/orgs.list.format.ts`). No upstream issue or pull
+   request yet.
+5. **Release source.** The update check, `composio upgrade`, skill installation, and
    companion-module self-repair fetch releases from `Lazurio/composio` instead of
    `ComposioHQ/composio` (`GITHUB_REPO` in `ts/packages/cli/src/constants.ts`). The
    `COMPOSIO_GITHUB_*` overrides, and `GITHUB_*` for self-repair, work as upstream. The update
@@ -86,7 +94,7 @@ missing SHA-256 utility or any other digest stops the install right after the do
 
 ## Retirement
 
-When upstream ships equivalents of all three changes in a stable release, Lazurio returns to the
+When upstream ships equivalents of all four changes in a stable release, Lazurio returns to the
 official build and these branches get no new releases. An installed Lazurio build keeps fetching
 releases from this fork until it is reinstalled from the official installer, or upgraded with
 `COMPOSIO_GITHUB_OWNER=ComposioHQ composio upgrade`.
