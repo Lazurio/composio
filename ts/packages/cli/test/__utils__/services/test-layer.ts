@@ -192,7 +192,8 @@ export interface TestLiveInput {
       | ((
           scope: MockRequestScope
         ) => SessionRetrieveInfoResponse | Promise<SessionRetrieveInfoResponse>);
-    organizations?: ReadonlyArray<OrganizationSummary>;
+    /** An organization without `created_at` is served with `TIMESTAMP`. */
+    organizations?: ReadonlyArray<OrganizationSummary & { readonly created_at?: string }>;
     projects?: ReadonlyArray<OrgProject>;
     connectedToolkits?: ReadonlyArray<string>;
     latestToolVersion?: { readonly tool_slug: string; readonly version: string };
@@ -1383,7 +1384,7 @@ export const TestLayer = (input?: TestLiveInput) =>
           list: async (query?: { limit?: number } | null, options?: RequestOptions) => {
             record('org.list', options, query);
             if (!accountData.organizations) throw noTestData('org.list');
-            const organizations = accountData.organizations.map(org => ({ ...org, ...timestamps }));
+            const organizations = accountData.organizations.map(org => ({ ...timestamps, ...org }));
             return {
               organizations,
               next_cursor: null,

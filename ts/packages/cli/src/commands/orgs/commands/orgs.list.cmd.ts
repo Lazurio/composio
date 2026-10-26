@@ -59,6 +59,7 @@ export const orgsCmd$List = Command.make('list', { limit }, ({ limit }) =>
         organizations.data.map(org => ({
           id: org.id,
           name: org.name,
+          created_at: org.created_at,
           is_selected_global_org: defaultOrgId === org.id,
         }))
       )
